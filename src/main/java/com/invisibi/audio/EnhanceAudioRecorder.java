@@ -1,6 +1,7 @@
 package com.invisibi.audio;
 
 import android.content.Context;
+import android.graphics.Color;
 import android.media.AudioFormat;
 import android.media.AudioRecord;
 import android.media.MediaCodec;
@@ -190,7 +191,6 @@ public class EnhanceAudioRecorder {
                 prepare();
             } catch (IOException e) {
                 Log.e(TAG, "Cannot start recorder, reason = " + e.getMessage());
-                e.printStackTrace();
                 changeState(RecorderState.Error);
                 return;
             }
@@ -322,7 +322,7 @@ public class EnhanceAudioRecorder {
             mAudioOutputStream.close();
             mMP4FileConverter.convert();
         } catch (IOException e) {
-            e.printStackTrace();
+            Log.e(TAG, "cannot write mp4 file");
         }
     }
 
@@ -346,7 +346,6 @@ public class EnhanceAudioRecorder {
             mEncoder.release();
             mEncoder = null;
         } catch (Exception e) {
-            e.printStackTrace();
             Log.e(TAG, "Cannot stop encoder correctly");
         }
     }
