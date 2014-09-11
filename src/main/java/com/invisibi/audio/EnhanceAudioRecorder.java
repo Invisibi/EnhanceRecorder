@@ -1,7 +1,6 @@
 package com.invisibi.audio;
 
 import android.content.Context;
-import android.graphics.Color;
 import android.media.AudioFormat;
 import android.media.AudioRecord;
 import android.media.MediaCodec;
@@ -9,6 +8,8 @@ import android.media.MediaCodecInfo;
 import android.media.MediaCodecList;
 import android.media.MediaFormat;
 import android.media.MediaRecorder;
+import android.media.audiofx.AutomaticGainControl;
+import android.media.audiofx.NoiseSuppressor;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.Message;
@@ -36,6 +37,7 @@ public class EnhanceAudioRecorder {
     private static final int DEFAULT_CHANNEL_COUNT = 1; // mono
     private static final int DEFAULT_SAMPLE_RATE = 16000;
     private static final int DEFAULT_BIT_RATE = 64 * 1024;
+    private static final int DEFAULT_DELAY_START = 500;
     private static final int MAX_AMPLITUTE = (int) Math.pow(2, 16) / 2; //16bit
     private static final int ADTS_HEADER_SIZE = 7;
 
@@ -56,9 +58,12 @@ public class EnhanceAudioRecorder {
     private double mAverageVolume;
     private boolean mNeedToReleaseAfterStop;
 
+    private NoiseSuppressor mNoiseSuppressor;
+    private AutomaticGainControl mAGC;
+
     private short[] mInputPCMBuffer;
 
-    private RecorderState mRecordState = RecorderState.Released;
+    private int mRecordState = RecorderState.Released;
     private RecordingParameters mParams;
 
     //TODO: Use for output aac raw file, replace it with MediaMuxer after Android 4.3+ is much more popular
@@ -69,15 +74,16 @@ public class EnhanceAudioRecorder {
     private OnInfoListener mOnInfoListener;
 
     public static final int MEDIA_RECORDER_INFO_MAX_DURATION_REACHED = 7878;
+    public static final int MEDIA_RECORDER_INFO_STATE_CHANGE = 7879;
 
-    public enum RecorderState {
-        Prepared,
-        Recording,
-        Paused,
-        Stopping,
-        Stopped,
-        Released,
-        Error
+    static public class RecorderState { //simulate enum for android.os.Message
+        public static final int Error = -1;
+        public static final int Released = 0;
+        public static final int Stopped = 1;
+        public static final int Prepared = 2;
+        public static final int Recording = 3;
+        public static final int Paused = 4;
+        public static final int Stopping = 5;
     }
 
     /**
@@ -92,6 +98,7 @@ public class EnhanceAudioRecorder {
          * @param what the type of information that has occurred:
          * <ul>
          * <li>{@link #MEDIA_RECORDER_INFO_MAX_DURATION_REACHED}
+         * <li>{@link #MEDIA_RECORDER_INFO_STATE_CHANGE}
          * </ul>
          * @param extra an extra code
          */
@@ -104,6 +111,7 @@ public class EnhanceAudioRecorder {
         private int mChannels;
         private int mEncodingBitrate;
         private int mMaxDuration;
+        private int mDelayStart;
         private String mOutputFilePath;
 
         public RecordingParameters() {
@@ -111,7 +119,8 @@ public class EnhanceAudioRecorder {
             mSampleRate = DEFAULT_SAMPLE_RATE;
             mChannels = DEFAULT_CHANNEL_COUNT;
             mEncodingBitrate = DEFAULT_BIT_RATE;
-            mMaxDuration = DEFALUT_MAX_DURATON + 200; //add 0.2s for max duration to avoid inaccurary in final file.
+            mMaxDuration = DEFALUT_MAX_DURATON + DEFAULT_DELAY_START;
+            mDelayStart = DEFAULT_DELAY_START;
             mOutputFilePath = "";
         }
 
@@ -161,6 +170,14 @@ public class EnhanceAudioRecorder {
 
         public String getOutputFilePath() {
             return mOutputFilePath;
+        }
+
+        public int getDelayStart() {
+            return mDelayStart;
+        }
+
+        public void setDelayStart(int delayStart) {
+            mDelayStart = delayStart;
         }
     }
 
@@ -283,17 +300,13 @@ public class EnhanceAudioRecorder {
                     if (read > 0) {
                         if (isAudioRecordRecording()) {
                             mCurrentPosition += ((double)read / mParams.getSampleRate() * 1000) ;
-                            Log.v(TAG, "read " + read + " bytes from audio source");
-                            Log.v(TAG, "current postion = " + mCurrentPosition);
+                            Log.v(TAG, "read " + read + " samples from audio source");
+                            if (mCurrentPosition < mParams.getDelayStart()) {
+                                continue;
+                            }
                             if (mCurrentPosition >= mMaxDuration) {
-                                EnhanceAudioRecorder.this.stop();
-                                if (mEventHandler != null) {
-                                    Message msg = mEventHandler.obtainMessage();
-                                    msg.what = EventHandler.MEDIA_RECORDER_EVENT_INFO;
-                                    msg.arg1 = MEDIA_RECORDER_INFO_MAX_DURATION_REACHED;
-                                    msg.arg2 = 0;
-                                    mEventHandler.sendMessage(msg);
-                                }
+                                EnhanceAudioRecorder.this.stopRecording();
+                                postInfoEvent(MEDIA_RECORDER_INFO_MAX_DURATION_REACHED, 0);
                             }
                         }
 
@@ -315,6 +328,16 @@ public class EnhanceAudioRecorder {
             }
         };
         mRecordingThread.start();
+    }
+
+    private void postInfoEvent(int arg1, int arg2) {
+        if (mEventHandler != null) {
+            Message msg = mEventHandler.obtainMessage();
+            msg.what = EventHandler.MEDIA_RECORDER_EVENT_INFO;
+            msg.arg1 = arg1;
+            msg.arg2 = arg2;
+            mEventHandler.sendMessage(msg);
+        }
     }
 
     private void outputMP4File() {
@@ -463,6 +486,14 @@ public class EnhanceAudioRecorder {
         outputMP4File();
         changeState(RecorderState.Stopped);
         mAudioRecord.release();
+        if (mNoiseSuppressor != null) {
+            mNoiseSuppressor.release();
+        }
+
+        if (mAGC != null) {
+            mAGC.release();
+        }
+
         releaseEncoder();
         File tmpFile = new File(mTmpFilePath);
         if (tmpFile.exists()) {
@@ -476,6 +507,16 @@ public class EnhanceAudioRecorder {
                 AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT);
         mAudioRecord = new AudioRecord(mParams.getAudioSource(), mParams.getSampleRate(), AudioFormat.CHANNEL_IN_MONO,
                 AudioFormat.ENCODING_PCM_16BIT, 2 * mMinBufferSize);
+
+        if (NoiseSuppressor.isAvailable()) {
+            Log.v(TAG, "NoiseSuppressor is available, create it to improve recording quality");
+            mNoiseSuppressor = NoiseSuppressor.create(mAudioRecord.getAudioSessionId());
+        }
+
+        if (AutomaticGainControl.isAvailable()) {
+            Log.v(TAG, "AutomaticGainControl is available, create it to improve recording quality");
+            mAGC = AutomaticGainControl.create(mAudioRecord.getAudioSessionId());
+        }
 
         initEncoder();
 
@@ -512,8 +553,9 @@ public class EnhanceAudioRecorder {
         return 20 * Math.log10((double)value / MAX_AMPLITUTE);
     }
 
-    private void changeState(RecorderState newState) {
+    private void changeState(int newState) {
         mRecordState = newState;
+        postInfoEvent(MEDIA_RECORDER_INFO_STATE_CHANGE, newState);
     }
 
     private static List<MediaCodecInfo> getCodecCandidates(String mimeType) {
@@ -557,7 +599,6 @@ public class EnhanceAudioRecorder {
                     if (mOnInfoListener != null) {
                         mOnInfoListener.onInfo(mEnhanceRecorder, msg.arg1, msg.arg2);
                     }
-
                     return;
 
                 default:
