@@ -38,7 +38,7 @@ public class EnhanceAudioRecorder {
     private static final int DEFAULT_SAMPLE_RATE = 16000;
     private static final int DEFAULT_BIT_RATE = 64 * 1024;
     private static final int DEFAULT_DELAY_START = 500;
-    private static final int MAX_AMPLITUTE = (int) Math.pow(2, 16) / 2; //16bit
+    private static final int MAX_AMPLITUTE = (int) Math.pow(2, 16) / 2 - 1; //16bit
     private static final int ADTS_HEADER_SIZE = 7;
 
     public static final int DEFALUT_MAX_DURATON = 60000;
@@ -544,13 +544,13 @@ public class EnhanceAudioRecorder {
                 accumulate += Math.pow(amplitude, 2);
             }
             mPeakVolume = calculateDb(peak);
-            mRMSVolume = calculateDb((int)(Math.sqrt(accumulate) / audioData.length));
+            mRMSVolume = calculateDb((int)Math.sqrt(accumulate / audioData.length));
+            Log.v(TAG, "peak: " + mPeakVolume + ", RMS: " + mRMSVolume);
         }
     }
 
     private double calculateDb(int value) {
-        value = value == 0 ? 1 : value;
-        return 20 * Math.log10((double)value / MAX_AMPLITUTE);
+        return value == 0 ? -96.0 : 20 * Math.log10((double)value / MAX_AMPLITUTE);
     }
 
     private void changeState(int newState) {
