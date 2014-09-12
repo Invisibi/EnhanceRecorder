@@ -32,7 +32,7 @@ import java.util.List;
  */
 public class EnhanceAudioRecorder {
 
-    private static final String TAG = "HedwigAudioRecorder";
+    private static final String TAG = "EnhanceAudioRecorder";
     private static final String DEFAULT_AUDIO_MIME_TYPE = "audio/mp4a-latm";
     private static final int DEFAULT_CHANNEL_COUNT = 1; // mono
     private static final int DEFAULT_SAMPLE_RATE = 16000;
@@ -55,7 +55,7 @@ public class EnhanceAudioRecorder {
     private int mCurrentPosition;//current recording position, base on sample rate and bytes per sample, millisecond
 
     private double mPeakVolume;
-    private double mAverageVolume;
+    private double mRMSVolume;
     private boolean mNeedToReleaseAfterStop;
 
     private NoiseSuppressor mNoiseSuppressor;
@@ -253,7 +253,7 @@ public class EnhanceAudioRecorder {
     public void getMetering(double[] values) {
         if (values != null && values.length >= 2) {
             values[0] = mPeakVolume;
-            values[1] = mAverageVolume;
+            values[1] = mRMSVolume;
         }
     }
 
@@ -537,14 +537,14 @@ public class EnhanceAudioRecorder {
     private void updateMetering(short[] audioData, int sizeInShort ) {
         if (audioData != null && audioData.length > 0) {
             short peak = 0;
-            int accumulate = 0;
+            double accumulate = 0.0;
             for (int i = 0; i < sizeInShort; i++) {
                 int amplitude = Math.abs(audioData[i]);
                 peak = (short)Math.max(amplitude, peak);
-                accumulate += amplitude;
+                accumulate += Math.pow(amplitude, 2);
             }
             mPeakVolume = calculateDb(peak);
-            mAverageVolume = calculateDb(accumulate / audioData.length);
+            mRMSVolume = calculateDb((int)(Math.sqrt(accumulate) / audioData.length));
         }
     }
 
