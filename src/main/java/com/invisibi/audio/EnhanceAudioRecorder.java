@@ -21,7 +21,11 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.LinkedList;
 import java.util.List;
+import java.util.Queue;
+import java.util.concurrent.LinkedBlockingQueue;
 
 /**
  * Add more features than Android's default MediaRecorder
@@ -40,6 +44,10 @@ public class EnhanceAudioRecorder {
     private static final int DEFAULT_DELAY_START = 500;
     private static final int MAX_AMPLITUTE = (int) Math.pow(2, 16) / 2 - 1; //16bit
     private static final int ADTS_HEADER_SIZE = 7;
+    private static final double FILTER_FACTOR_ALPHA = 0.05;
+    private static final double PENDING_AUDIO_LENGTH = 0.8;
+
+    private static final double DEFAULT_VOICE_THRESHOLD = 0.02;
 
     public static final int DEFALUT_MAX_DURATON = 60000;
 
@@ -53,6 +61,9 @@ public class EnhanceAudioRecorder {
 
     private Thread mRecordingThread;
     private int mCurrentPosition;//current recording position, base on sample rate and bytes per sample, millisecond
+    private double mVoiceFilteredResults;
+
+    private LinkedBlockingQueue<short[]> mPendingSampleQueue;
 
     private double mPeakVolume;
     private double mRMSVolume;
@@ -298,24 +309,41 @@ public class EnhanceAudioRecorder {
                 while (isAudioRecordRecording()) {
                     read = mAudioRecord.read(mInputPCMBuffer, 0, mMinBufferSize / 2);
                     if (read > 0) {
-                        if (isAudioRecordRecording()) {
-                            mCurrentPosition += ((double)read / mParams.getSampleRate() * 1000) ;
-                            Log.v(TAG, "read " + read + " samples from audio source");
-                            if (mCurrentPosition < mParams.getDelayStart()) {
-                                continue;
-                            }
-                            if (mCurrentPosition >= mMaxDuration) {
-                                EnhanceAudioRecorder.this.stopRecording();
-                                postInfoEvent(MEDIA_RECORDER_INFO_MAX_DURATION_REACHED, 0);
-                            }
+                        updateMetering(mInputPCMBuffer, read);
+                        short[] pendingBuffer = Arrays.copyOf(mInputPCMBuffer, read);
+                        try {
+                            mPendingSampleQueue.add(pendingBuffer);
+                        } catch (IllegalStateException e) { //queue is full
+                            Log.v(TAG, "pending audio queue is full, remove first buffer");
+                            mPendingSampleQueue.remove();
+                            mPendingSampleQueue.add(pendingBuffer);
                         }
 
-                        updateMetering(mInputPCMBuffer, read);
+                        if (!detectVoice(mPeakVolume)) {
+                            continue;
+                        }
 
-                        try {
-                            feedEncoder(mInputPCMBuffer, read);
-                        } catch (IllegalStateException e) {
-                            Log.e(TAG, "Cannot write audio data to encoder");
+                        //it may cause jitter in current position here if queue length is long.
+                        while (!mPendingSampleQueue.isEmpty()) {
+                            short[] audioBuffer = mPendingSampleQueue.remove();
+                            if (isAudioRecordRecording()) {
+                                mCurrentPosition += ((double)audioBuffer.length / mParams.getSampleRate() * 1000) ;
+                                Log.v(TAG, "read " + read + " samples from audio source");
+                                if (mCurrentPosition < mParams.getDelayStart()) {
+                                    continue;
+                                }
+
+                                if (mCurrentPosition >= mMaxDuration) {
+                                    EnhanceAudioRecorder.this.stopRecording();
+                                    postInfoEvent(MEDIA_RECORDER_INFO_MAX_DURATION_REACHED, 0);
+                                }
+
+                                try {
+                                    feedEncoder(audioBuffer, audioBuffer.length);
+                                } catch (IllegalStateException e) {
+                                    Log.e(TAG, "Cannot write audio data to encoder");
+                                }
+                            }
                         }
                     }
                 }
@@ -346,6 +374,8 @@ public class EnhanceAudioRecorder {
             mMP4FileConverter.convert();
         } catch (IOException e) {
             Log.e(TAG, "cannot write mp4 file");
+        } catch (IllegalArgumentException e) {
+            Log.e(TAG, "cannot write audio data to mp4 file");
         }
     }
 
@@ -499,6 +529,9 @@ public class EnhanceAudioRecorder {
         if (tmpFile.exists()) {
             tmpFile.delete();
         }
+
+        mPendingSampleQueue.clear();
+
         changeState(RecorderState.Released);
     }
 
@@ -507,6 +540,11 @@ public class EnhanceAudioRecorder {
                 AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT);
         mAudioRecord = new AudioRecord(mParams.getAudioSource(), mParams.getSampleRate(), AudioFormat.CHANNEL_IN_MONO,
                 AudioFormat.ENCODING_PCM_16BIT, 2 * mMinBufferSize);
+
+        mVoiceFilteredResults = 0.0;
+
+        int queueLength = (int)Math.ceil(PENDING_AUDIO_LENGTH / (mMinBufferSize / 2 / (double)mParams.getSampleRate()));
+        mPendingSampleQueue = new LinkedBlockingQueue<short[]>(queueLength);
 
         if (NoiseSuppressor.isAvailable()) {
             Log.v(TAG, "NoiseSuppressor is available, create it to improve recording quality");
@@ -605,6 +643,18 @@ public class EnhanceAudioRecorder {
                     Log.e(TAG, "Unknown message type " + msg.what);
                     return;
             }
+        }
+    }
+
+    private boolean detectVoice(double powerLevel) {
+        //Use the detect user blow algorithm from http://mobileorchard.com/tutorial-detecting-when-a-user-blows-into-the-mic/
+        double facotorOfPower = Math.pow(10, FILTER_FACTOR_ALPHA * powerLevel);
+        mVoiceFilteredResults = FILTER_FACTOR_ALPHA * facotorOfPower + (1.0 - FILTER_FACTOR_ALPHA) * mVoiceFilteredResults;
+        Log.v(TAG, "monitoring the filtered result = " + mVoiceFilteredResults);
+        if (mVoiceFilteredResults > DEFAULT_VOICE_THRESHOLD) {
+            return true;
+        } else {
+            return false;
         }
     }
  }

@@ -27,7 +27,7 @@ public class MP4FileConverter {
         mFileOutputStream = new FileOutputStream(outputFilePath);
     }
 
-    public void convert() throws IOException {
+    public void convert() throws IOException, IllegalArgumentException {
         double time1 = System.currentTimeMillis();
         Track audioTrack = new AACTrackImpl(new FileDataSourceImpl(mInputFilePath));
         Movie movie = new Movie();

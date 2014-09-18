@@ -136,13 +136,16 @@ public class AACTrackImpl extends AbstractTrack {
     public AACTrackImpl(DataSource dataSource) throws IOException {
         this(dataSource, "eng");
     }
-    public AACTrackImpl(DataSource dataSource, String lang) throws IOException {
+    public AACTrackImpl(DataSource dataSource, String lang) throws IOException, IllegalArgumentException {
         super(dataSource.toString());
         this.lang = lang;
         this.dataSource = dataSource;
         samples = new ArrayList<Sample>();
         firstHeader = readSamples(dataSource);
 
+        if (firstHeader == null) {
+            throw new IllegalArgumentException("no ADTS header");
+        }
         double packetsPerSecond = (double) firstHeader.sampleRate / 1024.0;
         double duration = samples.size() / packetsPerSecond;
 
