@@ -20,11 +20,10 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.nio.ShortBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.LinkedList;
 import java.util.List;
-import java.util.Queue;
 import java.util.concurrent.LinkedBlockingQueue;
 
 /**
@@ -42,7 +41,7 @@ public class EnhanceAudioRecorder {
     private static final int DEFAULT_SAMPLE_RATE = 16000;
     private static final int DEFAULT_BIT_RATE = 64 * 1024;
     private static final int DEFAULT_DELAY_START = 500;
-    private static final int MAX_AMPLITUTE = (int) Math.pow(2, 16) / 2 - 1; //16bit
+    private static final int MAX_AMPLITUTE = (int)Math.pow(2, 16) / 2 - 1; //16bit
     private static final int ADTS_HEADER_SIZE = 7;
     private static final double FILTER_FACTOR_ALPHA = 0.05;
     private static final double PENDING_AUDIO_LENGTH = 0.8;
@@ -100,18 +99,17 @@ public class EnhanceAudioRecorder {
     /**
      * Interface definition for a callback, use the similar interface with MediaRecorder
      */
-    public interface OnInfoListener
-    {
+    public interface OnInfoListener {
         /**
          * Called when an error occurs while recording.
          *
          * @param recorder the EnhanceAudioRecorder that encountered the error
-         * @param what the type of information that has occurred:
-         * <ul>
-         * <li>{@link #MEDIA_RECORDER_INFO_MAX_DURATION_REACHED}
-         * <li>{@link #MEDIA_RECORDER_INFO_STATE_CHANGE}
-         * </ul>
-         * @param extra an extra code
+         * @param what     the type of information that has occurred:
+         *                 <ul>
+         *                 <li>{@link #MEDIA_RECORDER_INFO_MAX_DURATION_REACHED}
+         *                 <li>{@link #MEDIA_RECORDER_INFO_STATE_CHANGE}
+         *                 </ul>
+         * @param extra    an extra code
          */
         void onInfo(EnhanceAudioRecorder recorder, int what, int extra);
     }
@@ -230,7 +228,7 @@ public class EnhanceAudioRecorder {
 
     public synchronized void stop() {
         if (mRecordState != RecorderState.Prepared && mRecordState != RecorderState.Recording
-                && mRecordState != RecorderState.Paused ) {
+                && mRecordState != RecorderState.Paused) {
             Log.w(TAG, "no need to stop recorder");
             return;
         }
@@ -251,6 +249,7 @@ public class EnhanceAudioRecorder {
 
     /**
      * Get current recording postion, time unit is millisecond
+     *
      * @return current postion
      */
     public int getCurrentPosition() {
@@ -259,6 +258,7 @@ public class EnhanceAudioRecorder {
 
     /**
      * Get metering values from recorder
+     *
      * @param values double array, values[0] is peak volume, value[1] is average volume
      */
     public void getMetering(double[] values) {
@@ -278,6 +278,7 @@ public class EnhanceAudioRecorder {
 
     /**
      * set max recording duration
+     *
      * @param maxDuration max duration, time unit is ms
      */
     public void setMaxDuration(int maxDuration) {
@@ -327,7 +328,7 @@ public class EnhanceAudioRecorder {
                         while (!mPendingSampleQueue.isEmpty()) {
                             short[] audioBuffer = mPendingSampleQueue.remove();
                             if (isAudioRecordRecording()) {
-                                mCurrentPosition += ((double)audioBuffer.length / mParams.getSampleRate() * 1000) ;
+                                mCurrentPosition += ((double)audioBuffer.length / mParams.getSampleRate() * 1000);
                                 Log.v(TAG, "read " + read + " samples from audio source");
                                 if (mCurrentPosition < mParams.getDelayStart()) {
                                     continue;
@@ -380,9 +381,9 @@ public class EnhanceAudioRecorder {
     }
 
     private void initEncoder() {
-        List<MediaCodecInfo> codecInfoList = getCodecCandidates(DEFAULT_AUDIO_MIME_TYPE);
         mEncoder = MediaCodec.createByCodecName("OMX.google.aac.encoder"); //use google's aac encoder first
         if (mEncoder == null) {
+            List<MediaCodecInfo> codecInfoList = getCodecCandidates(DEFAULT_AUDIO_MIME_TYPE);
             mEncoder = MediaCodec.createByCodecName(codecInfoList.get(0).getName());
         }
 
@@ -390,6 +391,7 @@ public class EnhanceAudioRecorder {
         mediaFormat.setString(MediaFormat.KEY_MIME, DEFAULT_AUDIO_MIME_TYPE);
         mediaFormat.setInteger(MediaFormat.KEY_BIT_RATE, mParams.getEncodingBitrate());
         mediaFormat.setInteger(MediaFormat.KEY_AAC_PROFILE, MediaCodecInfo.CodecProfileLevel.AACObjectLC);
+        mediaFormat.setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, mMinBufferSize);
         mEncoder.configure(mediaFormat, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE);
     }
 
@@ -415,7 +417,8 @@ public class EnhanceAudioRecorder {
         if (inputBufferIndex >= 0) {
             ByteBuffer inputBuffer = encoderInputBuffers[inputBufferIndex];
             inputBuffer.clear();
-            inputBuffer.asShortBuffer().put(audioData, 0, count);
+            ShortBuffer shortBuffer = inputBuffer.asShortBuffer();
+            shortBuffer.put(audioData, 0, count);
             mEncoder.queueInputBuffer(inputBufferIndex, 0, 2 * count, 0, 0);
         }
 
@@ -572,7 +575,7 @@ public class EnhanceAudioRecorder {
         mNeedToReleaseAfterStop = false;
     }
 
-    private void updateMetering(short[] audioData, int sizeInShort ) {
+    private void updateMetering(short[] audioData, int sizeInShort) {
         if (audioData != null && audioData.length > 0) {
             short peak = 0;
             double accumulate = 0.0;
@@ -619,8 +622,7 @@ public class EnhanceAudioRecorder {
         return codecList;
     }
 
-    private class EventHandler extends Handler
-    {
+    private class EventHandler extends Handler {
         private EnhanceAudioRecorder mEnhanceRecorder;
 
         public EventHandler(EnhanceAudioRecorder recorder, Looper looper) {
@@ -632,7 +634,7 @@ public class EnhanceAudioRecorder {
 
         @Override
         public void handleMessage(Message msg) {
-            switch(msg.what) {
+            switch (msg.what) {
                 case MEDIA_RECORDER_EVENT_INFO:
                     if (mOnInfoListener != null) {
                         mOnInfoListener.onInfo(mEnhanceRecorder, msg.arg1, msg.arg2);
@@ -657,4 +659,4 @@ public class EnhanceAudioRecorder {
             return false;
         }
     }
- }
+}
