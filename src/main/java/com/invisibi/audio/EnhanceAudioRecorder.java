@@ -508,7 +508,8 @@ public class EnhanceAudioRecorder {
     }
 
     private void stopRecording() {
-        mAudioRecord.stop();
+        int state = mAudioRecord.getState();
+        if (state == AudioRecord.STATE_INITIALIZED) { mAudioRecord.stop(); }
         if (mRecordingThread != null && mRecordingThread.getState() == Thread.State.TERMINATED) {
             Log.d(TAG, "recording thread state: " + mRecordingThread.getState());
             release();
