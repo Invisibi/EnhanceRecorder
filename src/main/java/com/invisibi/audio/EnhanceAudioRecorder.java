@@ -239,7 +239,12 @@ public class EnhanceAudioRecorder {
     }
 
     public synchronized void pause() {
-        stopRecording();
+        mAudioRecord.stop();
+        try {
+            mRecordingThread.join();
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
         changeState(RecorderState.Paused);
     }
 
