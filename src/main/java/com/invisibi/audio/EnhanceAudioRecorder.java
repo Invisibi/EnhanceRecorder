@@ -35,6 +35,9 @@ import java.util.concurrent.LinkedBlockingQueue;
  */
 public class EnhanceAudioRecorder {
 
+    public static final int MEDIA_RECORDER_INFO_MAX_DURATION_REACHED = 7878;
+    public static final int MEDIA_RECORDER_INFO_STATE_CHANGE = 7879;
+
     private static final String TAG = "EnhanceAudioRecorder";
     private static final String DEFAULT_AUDIO_MIME_TYPE = "audio/mp4a-latm";
     private static final int DEFAULT_CHANNEL_COUNT = 1; // mono
@@ -45,17 +48,15 @@ public class EnhanceAudioRecorder {
     private static final int ADTS_HEADER_SIZE = 7;
     private static final double FILTER_FACTOR_ALPHA = 0.05;
     private static final double PENDING_AUDIO_LENGTH = 0.8;
-
     private static final double DEFAULT_VOICE_THRESHOLD = 0.02;
-
-    public static final int DEFALUT_MAX_DURATON = 60000;
+    private static final int MAX_DURATION_INFINITE = -1;
 
     private Context mContext;
     private AudioRecord mAudioRecord;
     private MediaCodec mEncoder;
     private String mOutputFilePath;
     private String mTmpFilePath;
-    private int mMaxDuration; // milliseconds
+    private int mMaxDuration = MAX_DURATION_INFINITE; // milliseconds
     private int mMinBufferSize;
 
     private Thread mRecordingThread;
@@ -83,8 +84,9 @@ public class EnhanceAudioRecorder {
     private EventHandler mEventHandler;
     private OnInfoListener mOnInfoListener;
 
-    public static final int MEDIA_RECORDER_INFO_MAX_DURATION_REACHED = 7878;
-    public static final int MEDIA_RECORDER_INFO_STATE_CHANGE = 7879;
+    private OnStoppedHandler onStoppedHandler;
+
+    private final Handler uiHandler = new Handler(Looper.getMainLooper());
 
     static public class RecorderState { //simulate enum for android.os.Message
         public static final int Error = -1;
@@ -119,7 +121,6 @@ public class EnhanceAudioRecorder {
         private int mSampleRate;
         private int mChannels;
         private int mEncodingBitrate;
-        private int mMaxDuration;
         private int mDelayStart;
         private String mOutputFilePath;
 
@@ -128,7 +129,6 @@ public class EnhanceAudioRecorder {
             mSampleRate = DEFAULT_SAMPLE_RATE;
             mChannels = DEFAULT_CHANNEL_COUNT;
             mEncodingBitrate = DEFAULT_BIT_RATE;
-            mMaxDuration = DEFALUT_MAX_DURATON + DEFAULT_DELAY_START;
             mDelayStart = DEFAULT_DELAY_START;
             mOutputFilePath = "";
         }
@@ -149,10 +149,6 @@ public class EnhanceAudioRecorder {
             mEncodingBitrate = encodingBitrate;
         }
 
-        public void setMaxDuration(int maxDuration) {
-            mMaxDuration = maxDuration;
-        }
-
         public void setOutputFilePath(String outputFilePath) {
             mOutputFilePath = outputFilePath;
         }
@@ -171,10 +167,6 @@ public class EnhanceAudioRecorder {
 
         public int getEncodingBitrate() {
             return mEncodingBitrate;
-        }
-
-        public int getMaxDuration() {
-            return mMaxDuration;
         }
 
         public String getOutputFilePath() {
@@ -227,11 +219,20 @@ public class EnhanceAudioRecorder {
     }
 
     public synchronized void stop() {
+        stop(null);
+    }
+
+    public synchronized void stop(OnStoppedHandler handler) {
         if (mRecordState != RecorderState.Prepared && mRecordState != RecorderState.Recording
                 && mRecordState != RecorderState.Paused) {
             Log.w(TAG, "no need to stop recorder");
+            if (handler != null) {
+                handler.onStopped(this);
+            }
             return;
         }
+
+        onStoppedHandler = handler;
         changeState(RecorderState.Stopping);
         stopRecording();
         mCurrentPosition = 0;
@@ -286,10 +287,13 @@ public class EnhanceAudioRecorder {
      *
      * @param maxDuration max duration, time unit is ms
      */
-    public void setMaxDuration(int maxDuration) {
-        mMaxDuration = maxDuration;
+    public void setMaxDuration(final int maxDuration) {
+        if (maxDuration == MAX_DURATION_INFINITE) {
+            mMaxDuration = maxDuration;
+        } else {
+            mMaxDuration = maxDuration + mParams.getDelayStart();
+        }
     }
-
 
     public void setOnInfoListener(OnInfoListener listener) {
         mOnInfoListener = listener;
@@ -339,7 +343,8 @@ public class EnhanceAudioRecorder {
                                     continue;
                                 }
 
-                                if (mCurrentPosition >= mMaxDuration) {
+                                if (mMaxDuration != MAX_DURATION_INFINITE &&
+                                        mCurrentPosition >= mMaxDuration) {
                                     EnhanceAudioRecorder.this.stopRecording();
                                     postInfoEvent(MEDIA_RECORDER_INFO_MAX_DURATION_REACHED, 0);
                                 }
@@ -542,6 +547,16 @@ public class EnhanceAudioRecorder {
         mPendingSampleQueue.clear();
 
         changeState(RecorderState.Released);
+
+        if (onStoppedHandler != null) {
+            uiHandler.post(new Runnable() {
+                @Override
+                public void run() {
+                    onStoppedHandler.onStopped(EnhanceAudioRecorder.this);
+                    onStoppedHandler = null;
+                }
+            });
+        }
     }
 
     private void initAudioRecord() throws IOException {
@@ -567,7 +582,6 @@ public class EnhanceAudioRecorder {
 
         initEncoder();
 
-        mMaxDuration = mParams.getMaxDuration();
         mOutputFilePath = mParams.getOutputFilePath();
 
         mTmpFilePath = mContext.getApplicationInfo().dataDir + File.separator + "tmp.aac";
@@ -664,5 +678,9 @@ public class EnhanceAudioRecorder {
         } else {
             return false;
         }
+    }
+
+    public static interface OnStoppedHandler {
+        public void onStopped(EnhanceAudioRecorder enhanceAudioRecorder);
     }
 }
