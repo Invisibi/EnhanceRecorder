@@ -274,6 +274,10 @@ public class EnhanceAudioRecorder {
         }
     }
 
+    public double getPeakVolume() {
+        return mPeakVolume;
+    }
+
     public RecordingParameters getRecordingParameter() {
         return mParams;
     }
