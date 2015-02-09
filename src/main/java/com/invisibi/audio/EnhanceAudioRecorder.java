@@ -44,7 +44,7 @@ public class EnhanceAudioRecorder {
     private static final int DEFAULT_SAMPLE_RATE = 16000;
     private static final int DEFAULT_BIT_RATE = 64 * 1024;
     private static final int DEFAULT_DELAY_START = 500;
-    private static final int MAX_AMPLITUTE = (int)Math.pow(2, 16) / 2 - 1; //16bit
+    private static final int MAX_AMPLITUTE = (int) Math.pow(2, 16) / 2 - 1; //16bit
     private static final int ADTS_HEADER_SIZE = 7;
     private static final double FILTER_FACTOR_ALPHA = 0.05;
     private static final double PENDING_AUDIO_LENGTH = 0.8;
@@ -337,7 +337,7 @@ public class EnhanceAudioRecorder {
                         while (!mPendingSampleQueue.isEmpty()) {
                             short[] audioBuffer = mPendingSampleQueue.remove();
                             if (isAudioRecordRecording()) {
-                                mCurrentPosition += ((double)audioBuffer.length / mParams.getSampleRate() * 1000);
+                                mCurrentPosition += ((double) audioBuffer.length / mParams.getSampleRate() * 1000);
                                 Log.v(TAG, "read " + read + " samples from audio source");
                                 if (mCurrentPosition < mParams.getDelayStart()) {
                                     continue;
@@ -486,13 +486,13 @@ public class EnhanceAudioRecorder {
         int freqIdx = getFrequencyIdx(mParams.getSampleRate());
         int chanCfg = mParams.getChannels();
 
-        packet[0] = (byte)0xFF;
-        packet[1] = (byte)0xF1; //layer = 0; Mpeg-4 version, Protection absent
-        packet[2] = (byte)(((profile - 1) << 6) + ((freqIdx & 0x0F) << 2) + (chanCfg >> 2));
-        packet[3] = (byte)(((chanCfg & 3) << 6) + (length >> 11));
-        packet[4] = (byte)((length & 0x7FF) >> 3);
-        packet[5] = (byte)(((length & 7) << 5) + 0x1F);
-        packet[6] = (byte)0xFC;
+        packet[0] = (byte) 0xFF;
+        packet[1] = (byte) 0xF1; //layer = 0; Mpeg-4 version, Protection absent
+        packet[2] = (byte) (((profile - 1) << 6) + ((freqIdx & 0x0F) << 2) + (chanCfg >> 2));
+        packet[3] = (byte) (((chanCfg & 3) << 6) + (length >> 11));
+        packet[4] = (byte) ((length & 0x7FF) >> 3);
+        packet[5] = (byte) (((length & 7) << 5) + 0x1F);
+        packet[6] = (byte) 0xFC;
     }
 
     private int getFrequencyIdx(int sampleRate) {
@@ -519,7 +519,9 @@ public class EnhanceAudioRecorder {
 
     private void stopRecording() {
         int state = mAudioRecord.getState();
-        if (state == AudioRecord.STATE_INITIALIZED) { mAudioRecord.stop(); }
+        if (state == AudioRecord.STATE_INITIALIZED) {
+            mAudioRecord.stop();
+        }
         if (mRecordingThread != null && mRecordingThread.getState() == Thread.State.TERMINATED) {
             Log.d(TAG, "recording thread state: " + mRecordingThread.getState());
             release();
@@ -567,7 +569,7 @@ public class EnhanceAudioRecorder {
 
         mVoiceFilteredResults = 0.0;
 
-        int queueLength = (int)Math.ceil(PENDING_AUDIO_LENGTH / (mMinBufferSize / 2 / (double)mParams.getSampleRate()));
+        int queueLength = (int) Math.ceil(PENDING_AUDIO_LENGTH / (mMinBufferSize / 2 / (double) mParams.getSampleRate()));
         mPendingSampleQueue = new LinkedBlockingQueue<short[]>(queueLength);
 
         if (NoiseSuppressor.isAvailable()) {
@@ -601,17 +603,17 @@ public class EnhanceAudioRecorder {
             double accumulate = 0.0;
             for (int i = 0; i < sizeInShort; i++) {
                 int amplitude = Math.abs(audioData[i]);
-                peak = (short)Math.max(amplitude, peak);
+                peak = (short) Math.max(amplitude, peak);
                 accumulate += Math.pow(amplitude, 2);
             }
             mPeakVolume = calculateDb(peak);
-            mRMSVolume = calculateDb((int)Math.sqrt(accumulate / audioData.length));
+            mRMSVolume = calculateDb((int) Math.sqrt(accumulate / audioData.length));
             Log.v(TAG, "peak: " + mPeakVolume + ", RMS: " + mRMSVolume);
         }
     }
 
     private double calculateDb(int value) {
-        return value == 0 ? -96.0 : 20 * Math.log10((double)value / MAX_AMPLITUTE);
+        return value == 0 ? -96.0 : 20 * Math.log10((double) value / MAX_AMPLITUTE);
     }
 
     private void changeState(int newState) {
