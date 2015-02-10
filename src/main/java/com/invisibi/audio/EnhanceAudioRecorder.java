@@ -46,10 +46,11 @@ public class EnhanceAudioRecorder {
     private static final int DEFAULT_DELAY_START = 500;
     private static final int MAX_AMPLITUTE = (int) Math.pow(2, 16) / 2 - 1; //16bit
     private static final int ADTS_HEADER_SIZE = 7;
-    private static final double FILTER_FACTOR_ALPHA = 0.05;
+    private static final double FILTER_FACTOR = 0.05;
     private static final double PENDING_AUDIO_LENGTH = 0.8;
     private static final double DEFAULT_VOICE_THRESHOLD = 0.02;
     private static final int MAX_DURATION_INFINITE = -1;
+    public static final double MIN_DB = 96.0;
 
     private Context mContext;
     private AudioRecord mAudioRecord;
@@ -65,7 +66,7 @@ public class EnhanceAudioRecorder {
 
     private LinkedBlockingQueue<short[]> mPendingSampleQueue;
 
-    private double mPeakVolume;
+    private double mPeakVolumeDb;
     private double mRMSVolume;
     private boolean mNeedToReleaseAfterStop;
 
@@ -262,20 +263,8 @@ public class EnhanceAudioRecorder {
         return mCurrentPosition;
     }
 
-    /**
-     * Get metering values from recorder
-     *
-     * @param values double array, values[0] is peak volume, value[1] is average volume
-     */
-    public void getMetering(double[] values) {
-        if (values != null && values.length >= 2) {
-            values[0] = mPeakVolume;
-            values[1] = mRMSVolume;
-        }
-    }
-
-    public double getPeakVolume() {
-        return mPeakVolume;
+    public double getPeakVolumeDb() {
+        return mPeakVolumeDb;
     }
 
     public RecordingParameters getRecordingParameter() {
@@ -333,7 +322,7 @@ public class EnhanceAudioRecorder {
                             mPendingSampleQueue.add(pendingBuffer);
                         }
 
-                        if (!detectVoice(mPeakVolume)) {
+                        if (!detectVoice(mPeakVolumeDb)) {
                             continue;
                         }
 
@@ -610,14 +599,14 @@ public class EnhanceAudioRecorder {
                 peak = (short) Math.max(amplitude, peak);
                 accumulate += Math.pow(amplitude, 2);
             }
-            mPeakVolume = calculateDb(peak);
+            mPeakVolumeDb = calculateDb(peak);
             mRMSVolume = calculateDb((int) Math.sqrt(accumulate / audioData.length));
-            Log.v(TAG, "peak: " + mPeakVolume + ", RMS: " + mRMSVolume);
+            Log.v(TAG, "peak: " + mPeakVolumeDb + ", RMS: " + mRMSVolume);
         }
     }
 
     private double calculateDb(int value) {
-        return value == 0 ? -96.0 : 20 * Math.log10((double) value / MAX_AMPLITUTE);
+        return value == 0 ? -MIN_DB : 20 * Math.log10((double) value / MAX_AMPLITUTE);
     }
 
     private void changeState(int newState) {
@@ -674,16 +663,22 @@ public class EnhanceAudioRecorder {
         }
     }
 
-    private boolean detectVoice(double powerLevel) {
+    public boolean detectVoice(final double volume) {
         //Use the detect user blow algorithm from http://mobileorchard.com/tutorial-detecting-when-a-user-blows-into-the-mic/
-        double facotorOfPower = Math.pow(10, FILTER_FACTOR_ALPHA * powerLevel);
-        mVoiceFilteredResults = FILTER_FACTOR_ALPHA * facotorOfPower + (1.0 - FILTER_FACTOR_ALPHA) * mVoiceFilteredResults;
+        final double factorOfPower = Math.pow(10, 0.05 /* Is the constant convert db to ampl level 1/20 not FILTER_FACTOR */ * volume);
+        mVoiceFilteredResults = FILTER_FACTOR * factorOfPower + (1.0 - FILTER_FACTOR) * mVoiceFilteredResults;
         Log.v(TAG, "monitoring the filtered result = " + mVoiceFilteredResults);
         if (mVoiceFilteredResults > DEFAULT_VOICE_THRESHOLD) {
             return true;
         } else {
             return false;
         }
+    }
+
+    public double getVoiceVolumePercentage() {
+        final double peakVolumeDb = getPeakVolumeDb();
+        final double percentage = detectVoice(peakVolumeDb) ? ((MIN_DB + peakVolumeDb) / MIN_DB - DEFAULT_VOICE_THRESHOLD) : 0.0;
+        return percentage;
     }
 
     public static interface OnStoppedHandler {
