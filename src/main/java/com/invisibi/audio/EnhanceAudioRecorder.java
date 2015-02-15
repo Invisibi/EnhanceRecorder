@@ -68,7 +68,6 @@ public class EnhanceAudioRecorder {
 
     private double mPeakVolumeDb;
     private double mRMSVolume;
-    private boolean mNeedToReleaseAfterStop;
 
     private NoiseSuppressor mNoiseSuppressor;
     private AutomaticGainControl mAGC;
@@ -237,7 +236,6 @@ public class EnhanceAudioRecorder {
         changeState(RecorderState.Stopping);
         stopRecording();
         mCurrentPosition = 0;
-        mNeedToReleaseAfterStop = true;
     }
 
     public synchronized void pause() {
@@ -350,10 +348,6 @@ public class EnhanceAudioRecorder {
                             }
                         }
                     }
-                }
-
-                if (mNeedToReleaseAfterStop) {
-                    release();
                 }
 
                 Log.d(TAG, "recording thread stopped");
@@ -515,9 +509,16 @@ public class EnhanceAudioRecorder {
         if (state == AudioRecord.STATE_INITIALIZED) {
             mAudioRecord.stop();
         }
-        if (mRecordingThread != null && mRecordingThread.getState() == Thread.State.TERMINATED) {
-            Log.d(TAG, "recording thread state: " + mRecordingThread.getState());
-            release();
+
+        // wait for TERMINATED to release
+        while (true) {
+            if (mRecordingThread == null) {
+                break;
+            } else if (mRecordingThread.getState().equals(Thread.State.TERMINATED)) {
+                Log.d(TAG, "recording thread state: " + mRecordingThread.getState());
+                release();
+                break;
+            }
         }
     }
 
@@ -587,7 +588,6 @@ public class EnhanceAudioRecorder {
         }
         mCurrentPosition = 0;
         mInputPCMBuffer = new short[mMinBufferSize / 2];
-        mNeedToReleaseAfterStop = false;
     }
 
     private void updateMetering(short[] audioData, int sizeInShort) {
