@@ -338,7 +338,8 @@ public class EnhanceAudioRecorder {
                                 if (mMaxDuration != MAX_DURATION_INFINITE &&
                                         mCurrentPosition >= mMaxDuration) {
 
-                                    Thread stoppingWatchThread = new Thread(new Runnable() {
+                                    changeState(RecorderState.Stopping);
+                                    final Thread stoppingWatchThread = new Thread(new Runnable() {
                                         @Override
                                         public void run() {
                                             EnhanceAudioRecorder.this.stopRecording();
