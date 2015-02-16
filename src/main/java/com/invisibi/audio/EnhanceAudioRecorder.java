@@ -84,6 +84,7 @@ public class EnhanceAudioRecorder {
     private EventHandler mEventHandler;
     private OnInfoListener mOnInfoListener;
 
+    private OnStoppedHandler onReachMaxDurationStoppedHandler;
     private OnStoppedHandler onStoppedHandler;
 
     private final Handler uiHandler = new Handler(Looper.getMainLooper());
@@ -218,21 +219,21 @@ public class EnhanceAudioRecorder {
         changeState(RecorderState.Recording);
     }
 
-    public synchronized void stop() {
-        stop(null);
+    public void setOnReachMaxDurationStoppedHandler(OnStoppedHandler onReachMaxDurationStoppedHandler) {
+        this.onReachMaxDurationStoppedHandler = onReachMaxDurationStoppedHandler;
     }
 
-    public synchronized void stop(OnStoppedHandler handler) {
+    public synchronized void stop(final OnStoppedHandler onStoppedHandler) {
+        this.onStoppedHandler = onStoppedHandler;
         if (mRecordState != RecorderState.Prepared && mRecordState != RecorderState.Recording
                 && mRecordState != RecorderState.Paused) {
             Log.w(TAG, "no need to stop recorder");
-            if (handler != null) {
-                handler.onStopped(this);
+            if (onStoppedHandler != null) {
+                onStoppedHandler.onStopped(this);
             }
             return;
         }
 
-        onStoppedHandler = handler;
         changeState(RecorderState.Stopping);
         stopRecording();
         mCurrentPosition = 0;
@@ -336,8 +337,19 @@ public class EnhanceAudioRecorder {
 
                                 if (mMaxDuration != MAX_DURATION_INFINITE &&
                                         mCurrentPosition >= mMaxDuration) {
-                                    EnhanceAudioRecorder.this.stopRecording();
-                                    postInfoEvent(MEDIA_RECORDER_INFO_MAX_DURATION_REACHED, 0);
+
+                                    Thread stoppingWatchThread = new Thread(new Runnable() {
+                                        @Override
+                                        public void run() {
+                                            EnhanceAudioRecorder.this.stopRecording();
+                                            if (onReachMaxDurationStoppedHandler != null) {
+                                                onReachMaxDurationStoppedHandler.onStopped(EnhanceAudioRecorder.this);
+                                            }
+                                            postInfoEvent(MEDIA_RECORDER_INFO_MAX_DURATION_REACHED, 0);
+                                        }
+                                    });
+                                    stoppingWatchThread.start();
+                                    continue;
                                 }
 
                                 try {
@@ -515,9 +527,10 @@ public class EnhanceAudioRecorder {
             if (mRecordingThread == null) {
                 break;
             } else if (mRecordingThread.getState().equals(Thread.State.TERMINATED)) {
-                Log.d(TAG, "recording thread state: " + mRecordingThread.getState());
                 release();
                 break;
+            } else {
+                Log.d(TAG, "Waiting for TERMINATED, current recording thread state: " + mRecordingThread.getState());
             }
         }
     }
@@ -683,5 +696,9 @@ public class EnhanceAudioRecorder {
 
     public static interface OnStoppedHandler {
         public void onStopped(EnhanceAudioRecorder enhanceAudioRecorder);
+    }
+
+    public static interface OnStoppedByReachMaxDurationHandler {
+        public void onStoppedByReachMaxDuration(EnhanceAudioRecorder enhanceAudioRecorder);
     }
 }
