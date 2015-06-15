@@ -124,6 +124,7 @@ public class EnhanceAudioRecorder {
         private int mEncodingBitrate;
         private int mDelayStart;
         private String mOutputFilePath;
+        private boolean enableVoiceDetecting;
 
         public RecordingParameters() {
             mAudioSource = MediaRecorder.AudioSource.MIC;
@@ -132,6 +133,7 @@ public class EnhanceAudioRecorder {
             mEncodingBitrate = DEFAULT_BIT_RATE;
             mDelayStart = DEFAULT_DELAY_START;
             mOutputFilePath = "";
+            enableVoiceDetecting = false;
         }
 
         public void setAudioSource(int audioSource) {
@@ -148,6 +150,14 @@ public class EnhanceAudioRecorder {
 
         public void setEncodingBitrate(int encodingBitrate) {
             mEncodingBitrate = encodingBitrate;
+        }
+
+        public boolean isEnableVoiceDetecting() {
+            return enableVoiceDetecting;
+        }
+
+        public void setEnableVoiceDetecting(boolean enableVoiceDetecting) {
+            this.enableVoiceDetecting = enableVoiceDetecting;
         }
 
         public void setOutputFilePath(String outputFilePath) {
@@ -321,7 +331,7 @@ public class EnhanceAudioRecorder {
                             mPendingSampleQueue.add(pendingBuffer);
                         }
 
-                        if (!detectVoice(mPeakVolumeDb)) {
+                        if (mParams.enableVoiceDetecting && !detectVoice(mPeakVolumeDb)) {
                             continue;
                         }
 
@@ -338,7 +348,8 @@ public class EnhanceAudioRecorder {
                                 if (mMaxDuration != MAX_DURATION_INFINITE &&
                                         mCurrentPosition >= mMaxDuration) {
 
-                                    Thread stoppingWatchThread = new Thread(new Runnable() {
+                                    changeState(RecorderState.Stopping);
+                                    final Thread stoppingWatchThread = new Thread(new Runnable() {
                                         @Override
                                         public void run() {
                                             EnhanceAudioRecorder.this.stopRecording();
