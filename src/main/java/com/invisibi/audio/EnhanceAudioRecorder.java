@@ -48,7 +48,7 @@ public class EnhanceAudioRecorder {
     private static final int ADTS_HEADER_SIZE = 7;
     private static final double FILTER_FACTOR = 0.05;
     private static final double PENDING_AUDIO_LENGTH = 0.8;
-    private static final double DEFAULT_VOICE_THRESHOLD = 0.02;
+    private static final double DEFAULT_VOICE_THRESHOLD = 0.08;
     private static final int MAX_DURATION_INFINITE = -1;
     public static final double MIN_DB = 96.0;
 
